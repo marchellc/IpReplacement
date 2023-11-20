@@ -36,10 +36,22 @@ namespace IpReplacement
 
         public static void Set(int connId, AuthenticationToken token)
         {
+            if (connId < 0)
+            {
+                Log.Error($"Provided an invalid connection ID.", "Token Cache");
+                return;
+            }
+
+            if (token is null)
+            {
+                Log.Error($"Tried to save a null auth token for connId={connId}", "Token Cache");
+                return;
+            }
+
             lock (_lock)
             {
                 _tokens[connId] = token;
-                Log.Debug($"Saved token for {connId}: {token.RequestIp}", Plugin.Config.CacheDebug, "Token Cache");
+                Log.Debug($"Saved token for {connId}: {token.RequestIp ?? "(null)"}", Plugin.Config?.CacheDebug ?? false, "Token Cache");
             }
         }
 
@@ -48,9 +60,9 @@ namespace IpReplacement
             lock (_lock)
             {
                 if (_tokens.Remove(connId))
-                    Log.Debug($"Removed token for {connId}", "Token Cache");
+                    Log.Debug($"Removed token for {connId}", Plugin.Config?.CacheDebug ?? false, "Token Cache");
                 else
-                    Log.Debug($"Cannot remove token of {connId}; no such key", "Token Cache");
+                    Log.Debug($"Cannot remove token of {connId}; no such key", Plugin.Config?.CacheDebug ?? false, "Token Cache");
             }
         }
 
@@ -59,7 +71,7 @@ namespace IpReplacement
             lock (_lock)
             {
                 _tokens.Clear();
-                Log.Debug($"Removed all tokens.", "Token Cache");
+                Log.Debug($"Removed all tokens.", Plugin.Config?.CacheDebug ?? false, "Token Cache");
             }
         }
 
@@ -75,8 +87,6 @@ namespace IpReplacement
                         __instance.RejectAuthentication("null ECDH public key or public key signature.");
                     else if (msg.SignedAuthToken.TryGetToken<AuthenticationToken>("Authentication", out var authToken, out var error, out var uid))
                     {
-                        Set(__instance.connectionToClient.connectionId, authToken);
-
                         uid = PlayerAuthenticationManager.RemoveSalt(uid);
 
                         if (__instance._challenge != authToken.Challenge)
@@ -117,6 +127,8 @@ namespace IpReplacement
                                         __instance.RejectAuthentication("invalid ECDH exchange public key signature.", uid);
                                     else if (__instance.CheckBans(authToken, uid))
                                     {
+                                        Set(__instance.connectionToClient?.connectionId ?? -1, authToken);
+
                                         if (msg.EcdhPublicKey != null)
                                             __instance._hub.encryptedChannelManager.ServerProcessExchange(msg.EcdhPublicKey);
 
@@ -291,13 +303,13 @@ namespace IpReplacement
                                                 }
                                                 else
                                                     __instance.RejectBadgeToken(error);
-
-                                                if (!Player.PlayersUserIds.ContainsKey(__instance.UserId))
-                                                    Player.PlayersUserIds[__instance.UserId] = __instance._hub;
-
-                                                EventManager.ExecuteEvent(new PlayerJoinedEvent(__instance._hub));
                                             }
                                         }
+
+                                        if (!Player.PlayersUserIds.ContainsKey(__instance.UserId))
+                                            Player.PlayersUserIds[__instance.UserId] = __instance._hub;
+
+                                        EventManager.ExecuteEvent(new PlayerJoinedEvent(__instance._hub));
                                     }
                                 }
                             }
