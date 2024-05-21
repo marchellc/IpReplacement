@@ -6,8 +6,6 @@ using GameCore;
 
 using HarmonyLib;
 
-using Mirror.LiteNetLib4Mirror;
-
 using NorthwoodLib;
 
 using PluginAPI.Core;
@@ -15,7 +13,7 @@ using PluginAPI.Events;
 
 using System;
 using System.Collections.Generic;
-
+using System.Linq;
 using Log = PluginAPI.Core.Log;
 
 namespace IpReplacement
@@ -103,23 +101,6 @@ namespace IpReplacement
                             {
                                 if (!__instance.isLocalPlayer)
                                 {
-                                    var ip = LiteNetLib4MirrorServer.Peers[__instance.connectionToClient.connectionId].EndPoint;
-
-                                    if (ip != null && (!CustomLiteNetLib4MirrorTransport.UserIds.ContainsKey(ip)
-                                        || !CustomLiteNetLib4MirrorTransport.UserIds[ip].UserId.Equals(uid, StringComparison.Ordinal))
-                                        && !CustomLiteNetLib4MirrorTransport.UserIdFastReload.Contains(uid))
-                                    {
-                                        __instance._hub.gameConsoleTransmission.SendToClient("UserID mismatch between authentication and preauthentication token.", "red");
-                                        __instance._hub.gameConsoleTransmission.SendToClient("Preauth: " + (CustomLiteNetLib4MirrorTransport.UserIds.TryGetValue(ip, out var preauthItem) ? preauthItem.UserId : "(null)"), "red");
-                                        __instance._hub.gameConsoleTransmission.SendToClient("Auth: " + uid, "red");
-                                        __instance.RejectAuthentication("UserID mismatch between authentication and preauthentication token. Check the game console for more details.", uid, false);
-
-                                        return false;
-                                    }
-
-                                    if (ip != null && CustomLiteNetLib4MirrorTransport.UserIds.ContainsKey(ip))
-                                        CustomLiteNetLib4MirrorTransport.UserIds.Remove(ip);
-
                                     if (CustomLiteNetLib4MirrorTransport.UserIdFastReload.Contains(uid))
                                         CustomLiteNetLib4MirrorTransport.UserIdFastReload.Remove(uid);
 
@@ -127,6 +108,24 @@ namespace IpReplacement
                                         __instance.RejectAuthentication("invalid ECDH exchange public key signature.", uid);
                                     else if (__instance.CheckBans(authToken, uid))
                                     {
+                                        if (!authToken.BypassBans)
+                                        {
+                                            var bans = BanHandler.GetBans(BanHandler.BanType.IP);
+                                            var active = bans.FirstOrDefault(b => b.Id == authToken.RequestIp);
+
+                                            if (active != null)
+                                            {
+                                                __instance.RejectAuthentication(
+                                                    $"You have an active IP ban on this server!\n" +
+                                                    $"Reason: {active.Reason}\n" +
+                                                    $"Expires: {new DateTime(active.Expires).ToString("G")}\n" +
+                                                    $"Issued by: {active.Issuer}");
+
+                                                Log.Warning($"Rejected authentification of '{authToken.UserId} - {authToken.RequestIp}' due to an active IP ban.", "IP Replacement");
+                                                return false;
+                                            }
+                                        }
+
                                         Set(__instance.connectionToClient?.connectionId ?? -1, authToken);
 
                                         if (msg.EcdhPublicKey != null)
@@ -136,7 +135,7 @@ namespace IpReplacement
 
                                         __instance.AuthenticationResponse = msg;
 
-                                        var log = $"{uid} authentificated from endpoint {ip?.ToString() ?? "(null)"} (Real IP: {__instance.connectionToClient.address}). Player ID assigned: {__instance._hub.PlayerId}. Auth token serial number: {msg.AuthToken.Serial}";
+                                        var log = $"{uid} authentificated from endpoint {__instance.connectionToClient.address}. Player ID assigned: {__instance._hub.PlayerId}. Auth token serial number: {msg.AuthToken.Serial}";
 
                                         ServerConsole.AddLog(log, ConsoleColor.Green);
                                         ServerLogs.AddLog(ServerLogs.Modules.Networking, log, ServerLogs.ServerLogType.ConnectionUpdate);

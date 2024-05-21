@@ -7,6 +7,9 @@ namespace IpReplacement
     {
         [PluginEvent]
         public void OnWaitingForPlayers(WaitingForPlayersEvent ev)
-            => TokenCache.RemoveAll();
+        {
+            TokenCache.RemoveAll();
+            WhiteList.Reload();
+        }
     }
 }
